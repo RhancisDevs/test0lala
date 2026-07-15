@@ -1,4 +1,4 @@
--- oms
+-- lamtpt
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -1413,7 +1413,7 @@ local function createDropdown(parent, position, size, options, placeholder, mult
     local List = Instance.new("Frame")
     List.BackgroundColor3 = Theme.PanelAlt
     List.Position = UDim2.new(0, position.X.Offset, 0, position.Y.Offset + size.Y.Offset + 4)
-    List.Size = UDim2.new(0, size.X.Offset, 0, 0)
+    List.Size = UDim2.new(0, Button.AbsoluteSize.X, 0, h)
     List.Visible = false
     List.ClipsDescendants = true
     List.ZIndex = 30
