@@ -1,4 +1,5 @@
--- udapte
+-- foxed
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1409,14 +1410,17 @@ local function createDropdown(parent, position, size, options, placeholder, mult
     Arrow.ZIndex = 8
     Arrow.Parent = Button
 
+    local abs = Button.AbsolutePosition
+    local guiAbs = page.AbsolutePosition
+
     local List = Instance.new("Frame")
     List.BackgroundColor3 = Theme.PanelAlt
-    List.Position = UDim2.new(0, position.X.Offset, 0, position.Y.Offset + size.Y.Offset + 4)
+    List.Position = UDim2.fromOffset(abs.X - guiAbs.X, abs.Y - guiAbs.Y + Button.AbsoluteSize.Y + 4)
     List.Size = UDim2.new(0, size.X.Offset, 0, 0)
     List.Visible = false
     List.ClipsDescendants = true
     List.ZIndex = 30
-    List.Parent = parent
+    List.Parent = page
 
     local listCorner = Instance.new("UICorner")
     listCorner.CornerRadius = UDim.new(0, 8)
