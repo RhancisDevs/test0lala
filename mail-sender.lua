@@ -1,3 +1,4 @@
+-- updated
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -76,18 +77,21 @@ local function watchInventory(category, callback)
 end
 
 replica:OnChange(function(_, path)
-    if path[1] ~= "Inventory" then return end
-    local watcher = watchers[path[2]]
-    if not watcher then return end
-    watcher.Callback()
-    watcher.Cache = deepCopy(replica.Data.Inventory[path[2]] or {})
-end)
+    if path[1] ~= "Inventory" then
+        return
+    end
 
-watchInventory("Pets", refreshPets)
-watchInventory("Seeds", refreshSeeds)
-for _, category in ipairs({"Sprinklers", "WateringCans", "Trowels", "Eggs"}) do
-    watchInventory(category, refreshGears)
-end
+    local watcher = watchers[path[2]]
+    if not watcher then
+        return
+    end
+
+    local oldCache = watcher.Cache
+    local newCache = deepCopy(replica.Data.Inventory[path[2]] or {})
+
+    watcher.Cache = newCache
+    watcher.Callback(oldCache, newCache)
+end)
 
 Backpack.ChildAdded:Connect(function(item)
     if item:IsA("Tool") then refreshFruits() end
@@ -113,16 +117,7 @@ local viewport = camera.ViewportSize
 local IsMobile = viewport.X < 600 or (UserInputService.TouchEnabled and not UserInputService.MouseEnabled)
 
 local WIDTH = math.clamp(math.floor(viewport.X * (IsMobile and 0.94 or 0.9)), IsMobile and 300 or 340, 920)
-local HEIGHT = math.clamp(math.floor(viewport.Y * (IsMobile and 0.82 or 0.75)), IsMobile and 460 or 420, 620)
-
--- Height (in px, before UIScale) that the Recipient/Note/Profile row takes
--- up on the Main tab. Every other section on that tab (Current Mail,
--- Actions) derives its size from this instead of a hardcoded magic number,
--- so it can't silently collapse when the window is a different size on
--- mobile than it is on desktop.
-local SPLIT_HEIGHT = IsMobile and 360 or 200
-local ACTIONS_HEIGHT = 40
-local MAIN_LIST_GAP = 12 -- mainListLayout.Padding, applied twice (Split->MailSection, MailSection->Actions)
+local HEIGHT = math.clamp(math.floor(viewport.Y * (IsMobile and 0.8 or 0.75)), IsMobile and 380 or 420, 560)
 
 local Main = Instance.new("Frame")
 Main.Name = "Main"
@@ -145,9 +140,6 @@ UIStroke.Thickness = 1
 UIStroke.Parent = Main
 
 local UIScale = Instance.new("UIScale")
--- On mobile we already shrink WIDTH/HEIGHT to fit the viewport, so an
--- additional flat 0.88 downscale just makes every tap target smaller and
--- harder to hit. Only apply the shrink on desktop.
 UIScale.Scale = IsMobile and 1 or 0.88
 UIScale.Parent = Main
 
@@ -453,18 +445,21 @@ end
 local Split = Instance.new("Frame")
 Split.Name = "Split"
 Split.BackgroundTransparency = 1
-Split.Size = UDim2.new(1, 0, 0, SPLIT_HEIGHT)
 Split.LayoutOrder = 1
 Split.Parent = MainPage
 
+local SplitLayout
 if IsMobile then
     -- Stack Recipient/Note above the Profile card instead of squeezing both
-    -- into ~45%-wide columns, which left profile text truncated/overlapping
-    -- and the avatar cramped on narrow phone screens.
-    local SplitLayout = Instance.new("UIListLayout")
+    -- into ~45%-wide columns, which left profile text truncated and the
+    -- avatar cramped on narrow phone screens.
+    Split.Size = UDim2.new(1, 0, 0, 340)
+    SplitLayout = Instance.new("UIListLayout")
     SplitLayout.Padding = UDim.new(0, 12)
     SplitLayout.SortOrder = Enum.SortOrder.LayoutOrder
     SplitLayout.Parent = Split
+else
+    Split.Size = UDim2.new(1, 0, 0, 200)
 end
 
 local LeftCol = Instance.new("Frame")
@@ -490,19 +485,13 @@ NoteInput:GetPropertyChangedSignal("Text"):Connect(function()
     noteText = NoteInput.Text
 end)
 
--- ==========================================================================
--- Profile card -- redesigned as a header (avatar + name/username stacked
--- beside it) plus a User ID chip below, built with a UIListLayout instead
--- of hand-placed pixel offsets. That's both what makes it look nicer and
--- what stops it from ever overlapping again if the card's size changes.
--- ==========================================================================
 local ProfileCard = Instance.new("Frame")
 ProfileCard.Name = "ProfileCard"
 ProfileCard.BackgroundColor3 = Theme.Panel
 ProfileCard.LayoutOrder = 2
 ProfileCard.ClipsDescendants = true
 if IsMobile then
-    ProfileCard.Size = UDim2.new(1, 0, 0, 168)
+    ProfileCard.Size = UDim2.new(1, 0, 0, 140)
     ProfileCard.Position = UDim2.new(0, 0, 0, 0)
 else
     ProfileCard.Size = UDim2.new(0.44, -8, 1, 0)
@@ -526,107 +515,52 @@ pcPadding.PaddingTop = UDim.new(0, 14)
 pcPadding.PaddingBottom = UDim.new(0, 14)
 pcPadding.Parent = ProfileCard
 
-local pcLayout = Instance.new("UIListLayout")
-pcLayout.Padding = UDim.new(0, 12)
-pcLayout.SortOrder = Enum.SortOrder.LayoutOrder
-pcLayout.Parent = ProfileCard
-
--- Header: avatar + name/username stack, side by side
-local ProfileHeader = Instance.new("Frame")
-ProfileHeader.BackgroundTransparency = 1
-ProfileHeader.Size = UDim2.new(1, 0, 0, 60)
-ProfileHeader.LayoutOrder = 1
-ProfileHeader.Parent = ProfileCard
-
 local Avatar = Instance.new("ImageLabel")
 Avatar.Name = "Avatar"
 Avatar.Size = UDim2.fromOffset(60, 60)
 Avatar.BackgroundColor3 = Theme.PanelAlt
 Avatar.Image = ""
-Avatar.Parent = ProfileHeader
+Avatar.Parent = ProfileCard
 
 local avCorner = Instance.new("UICorner")
-avCorner.CornerRadius = UDim.new(0, 10)
+avCorner.CornerRadius = UDim.new(0, 8)
 avCorner.Parent = Avatar
 
-local avStroke = Instance.new("UIStroke")
-avStroke.Color = Theme.Stroke
-avStroke.Thickness = 1
-avStroke.Parent = Avatar
+local function profileRow(labelText, valueText, order)
+    local Row = Instance.new("Frame")
+    Row.BackgroundTransparency = 1
+    Row.Size = UDim2.new(1, -92, 0, 22)
+    Row.Position = UDim2.new(0, 92, 0, 5 + order * 22)
+    Row.Parent = ProfileCard
 
-local NameStack = Instance.new("Frame")
-NameStack.BackgroundTransparency = 1
-NameStack.Position = UDim2.fromOffset(72, 0)
-NameStack.Size = UDim2.new(1, -72, 1, 0)
-NameStack.Parent = ProfileHeader
+    local L = Instance.new("TextLabel")
+    L.BackgroundTransparency = 1
+    L.Size = UDim2.new(0.42, 0, 1, 0)
+    L.Font = FONT_REG
+    L.TextSize = 13
+    L.TextColor3 = Theme.SubText
+    L.TextXAlignment = Enum.TextXAlignment.Left
+    L.Text = labelText
+    L.Parent = Row
 
-local NameStackLayout = Instance.new("UIListLayout")
-NameStackLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-NameStackLayout.Padding = UDim.new(0, 4)
-NameStackLayout.SortOrder = Enum.SortOrder.LayoutOrder
-NameStackLayout.Parent = NameStack
+    local V = Instance.new("TextLabel")
+    V.BackgroundTransparency = 1
+    V.Size = UDim2.new(0.58, 0, 1, 0)
+    V.Position = UDim2.new(0.42, 0, 0, 0)
+    V.Font = FONT_SEMI
+    V.TextSize = 15
+    V.TextColor3 = Theme.Text
+    V.TextXAlignment = Enum.TextXAlignment.Left
+    V.TextTruncate = Enum.TextTruncate.AtEnd
+    V.Text = valueText
+    V.Parent = Row
 
-local DisplayNameVal = Instance.new("TextLabel")
-DisplayNameVal.BackgroundTransparency = 1
-DisplayNameVal.Size = UDim2.new(1, 0, 0, 22)
-DisplayNameVal.Font = FONT_BOLD
-DisplayNameVal.TextSize = 17
-DisplayNameVal.TextColor3 = Theme.Text
-DisplayNameVal.TextXAlignment = Enum.TextXAlignment.Left
-DisplayNameVal.TextTruncate = Enum.TextTruncate.AtEnd
-DisplayNameVal.Text = "No recipient yet"
-DisplayNameVal.LayoutOrder = 1
-DisplayNameVal.Parent = NameStack
+    return V
+end
 
-local UsernameVal = Instance.new("TextLabel")
-UsernameVal.BackgroundTransparency = 1
-UsernameVal.Size = UDim2.new(1, 0, 0, 18)
-UsernameVal.Font = FONT_REG
-UsernameVal.TextSize = 14
-UsernameVal.TextColor3 = Theme.SubText
-UsernameVal.TextXAlignment = Enum.TextXAlignment.Left
-UsernameVal.TextTruncate = Enum.TextTruncate.AtEnd
-UsernameVal.Text = "Search a username above"
-UsernameVal.LayoutOrder = 2
-UsernameVal.Parent = NameStack
-
--- User ID chip, styled like a small pill instead of a bare label row
-local UserIdChip = Instance.new("Frame")
-UserIdChip.BackgroundColor3 = Theme.PanelAlt
-UserIdChip.Size = UDim2.new(1, 0, 0, 34)
-UserIdChip.LayoutOrder = 2
-UserIdChip.Parent = ProfileCard
-
-local chipCorner = Instance.new("UICorner")
-chipCorner.CornerRadius = UDim.new(0, 8)
-chipCorner.Parent = UserIdChip
-
-local chipPadding = Instance.new("UIPadding")
-chipPadding.PaddingLeft = UDim.new(0, 10)
-chipPadding.PaddingRight = UDim.new(0, 10)
-chipPadding.Parent = UserIdChip
-
-local ChipLabel = Instance.new("TextLabel")
-ChipLabel.BackgroundTransparency = 1
-ChipLabel.Size = UDim2.new(0.4, 0, 1, 0)
-ChipLabel.Font = FONT_REG
-ChipLabel.TextSize = 13
-ChipLabel.TextColor3 = Theme.SubText
-ChipLabel.TextXAlignment = Enum.TextXAlignment.Left
-ChipLabel.Text = "🪪  User ID"
-ChipLabel.Parent = UserIdChip
-
-local UserIdVal = Instance.new("TextLabel")
-UserIdVal.BackgroundTransparency = 1
-UserIdVal.Position = UDim2.new(0.4, 0, 0, 0)
-UserIdVal.Size = UDim2.new(0.6, 0, 1, 0)
-UserIdVal.Font = FONT_SEMI
-UserIdVal.TextSize = 14
-UserIdVal.TextColor3 = Theme.Text
-UserIdVal.TextXAlignment = Enum.TextXAlignment.Right
-UserIdVal.TextTruncate = Enum.TextTruncate.AtEnd
-UserIdVal.Text = "—"
-UserIdVal.Parent = UserIdChip
+local DisplayNameVal = profileRow("Display name", "—", 0)
+local UsernameVal    = profileRow("Username", "—", 1)
+local UserIdVal      = profileRow("User ID", "—", 2)
 
 local request =
     syn and syn.request or
@@ -661,8 +595,8 @@ end
 local function lookupUser(username)
     if username == "" then
         Avatar.Image = ""
-        DisplayNameVal.Text = "No recipient yet"
-        UsernameVal.Text = "Search a username above"
+        DisplayNameVal.Text = "—"
+        UsernameVal.Text = "—"
         UserIdVal.Text = "—"
         userId = nil
         setRecipientStrokeState("idle")
@@ -736,17 +670,11 @@ RecipientInput.FocusLost:Connect(function(enterPressed)
 end)
 
 -- ---- Current Mail list ----
--- MailSection used to be sized with a hardcoded "1, 0, 1, -264" comment
--- that assumed a desktop-only Split height of 200. On mobile, Split is
--- taller (SPLIT_HEIGHT = 360) so that fixed -264 offset left almost no
--- room at all for this section -- it rendered as the ~2px sliver you saw
--- in the screenshot. It's now derived from SPLIT_HEIGHT + ACTIONS_HEIGHT +
--- the two UIListLayout gaps, so it always leaves the right amount of room
--- no matter which layout (mobile or desktop) is active.
 local MailSection = Instance.new("Frame")
 MailSection.Name = "MailSection"
 MailSection.BackgroundTransparency = 1
-MailSection.Size = UDim2.new(1, 0, 1, -(SPLIT_HEIGHT + ACTIONS_HEIGHT + MAIN_LIST_GAP * 2))
+-- Split height (200 desktop / 340 mobile) + 40 (Actions) + 12*2 (mainListLayout padding)
+MailSection.Size = UDim2.new(1, 0, 1, -(Split.Size.Y.Offset + 64))
 MailSection.LayoutOrder = 2
 MailSection.Parent = MainPage
 
@@ -770,7 +698,7 @@ local MailListFrame = Instance.new("ScrollingFrame")
 MailListFrame.Name = "MailList"
 MailListFrame.BackgroundColor3 = Theme.Panel
 MailListFrame.BorderSizePixel = 0
-MailListFrame.Size = UDim2.new(1, 0, 1, -26)
+MailListFrame.Size = UDim2.new(1, 0, 1, -60)
 MailListFrame.LayoutOrder = 2
 MailListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 MailListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -900,7 +828,7 @@ end
 local Actions = Instance.new("Frame")
 Actions.Name = "Actions"
 Actions.BackgroundTransparency = 1
-Actions.Size = UDim2.new(1, 0, 0, ACTIONS_HEIGHT)
+Actions.Size = UDim2.new(1, 0, 0, 40)
 Actions.LayoutOrder = 3
 Actions.Parent = MainPage
 
@@ -966,8 +894,8 @@ ClearBtn.MouseButton1Click:Connect(function()
     noteText = ""
     userId = nil
     Avatar.Image = ""
-    DisplayNameVal.Text = "No recipient yet"
-    UsernameVal.Text = "Search a username above"
+    DisplayNameVal.Text = "—"
+    UsernameVal.Text = "—"
     UserIdVal.Text = "—"
     setRecipientStrokeState("idle")
     setStatus("")
@@ -1015,7 +943,7 @@ SendBtn.MouseButton1Click:Connect(function()
 end)
 
 local mainListLayout = Instance.new("UIListLayout")
-mainListLayout.Padding = UDim.new(0, MAIN_LIST_GAP)
+mainListLayout.Padding = UDim.new(0, 12)
 mainListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 mainListLayout.Parent = MainPage
 
@@ -1843,6 +1771,31 @@ refreshSeeds = buildSimpleCategoryPage(tabPages["Seeds"], "Seed", getSeedData,
 refreshGears = buildSimpleCategoryPage(tabPages["Gears"], "Gear", getGearData,
     function(v) selectedGear = v end, function(v) gearAmount = v end)
 
+watchInventory("Pets", function()
+    if refreshPets then
+        refreshPets()
+    end
+end)
+
+watchInventory("Seeds", function()
+    if refreshSeeds then
+        refreshSeeds()
+    end
+end)
+
+for _, category in ipairs({
+    "Sprinklers",
+    "WateringCans",
+    "Trowels",
+    "Eggs",
+}) do
+    watchInventory(category, function()
+        if refreshGears then
+            refreshGears()
+        end
+    end)
+end
+
 local selectedFruit = nil
 local fruitMode = "Selected Fruits"
 local fruitValueAmount = 0
@@ -1862,8 +1815,7 @@ do
     -- Controls row: this used to be laid out with fixed pixel offsets
     -- (0 / 316 / 546) that assumed a ~900px-wide desktop window. On a
     -- narrow mobile window (WIDTH can be ~300-378) those offsets pushed the
-    -- Mode dropdown and Sheckles input completely off the visible page --
-    -- exactly the overlap/cutoff seen in the screenshots. Now we use a
+    -- Mode dropdown and Sheckles input completely off-screen. Now we use a
     -- UIListLayout so controls flow left-to-right on desktop and stack
     -- vertically on mobile, always staying inside the page bounds.
     local ControlsRow = Instance.new("Frame")
